@@ -6,40 +6,60 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    #map { height: 400px; margin-top: 2rem; }
+    #map { height: 500px; margin-top: 2rem; }
+    body { background-color: #f8f9fa; }
+    h2, h4 { color: #006400; }
+    .form-control { border-radius: 0.5rem; }
+    .btn-primary { background-color: #006400; border: none; }
+    .btn-primary:hover { background-color: #004d00; }
   </style>
 </head>
 <body class="bg-light">
-  <div class="container mt-5">
-    <h2 class="text-center mb-4">VectorVigil: Malaria Risk Predictor</h2>
-    <form id="predictForm" class="card p-4 shadow-sm">
-      <div class="mb-3">
-        <label for="rainfall" class="form-label">Rainfall (mm)</label>
-        <input type="number" step="0.1" class="form-control" id="rainfall" required>
+  <div class="container mt-4">
+
+    <!-- Top Bar -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 class="mb-0">VectorVigil: Malaria Risk Predictor</h2>
+      <div>
+        <span class="me-3">👤 Logged in as: <strong>{{ user }}</strong></span>
+        <a href="/logout" class="btn btn-outline-danger btn-sm">Logout</a>
       </div>
-      <div class="mb-3">
-        <label for="temperature" class="form-label">Temperature (°C)</label>
-        <input type="number" step="0.1" class="form-control" id="temperature" required>
+    </div>
+
+    <!-- Prediction Form -->
+    <form id="predictForm" class="card p-4 shadow-sm mb-5">
+      <div class="row">
+        <div class="col-md-6 mb-3">
+          <label for="rainfall" class="form-label">Rainfall (mm)</label>
+          <input type="number" step="0.1" class="form-control" id="rainfall" required>
+        </div>
+        <div class="col-md-6 mb-3">
+          <label for="temperature" class="form-label">Temperature (°C)</label>
+          <input type="number" step="0.1" class="form-control" id="temperature" required>
+        </div>
+        <div class="col-md-6 mb-3">
+          <label for="humidity" class="form-label">Humidity (%)</label>
+          <input type="number" step="0.1" class="form-control" id="humidity" required>
+        </div>
+        <div class="col-md-6 mb-3">
+          <label for="latitude" class="form-label">Latitude</label>
+          <input type="number" step="0.0001" class="form-control" id="latitude" required>
+        </div>
+        <div class="col-md-6 mb-3">
+          <label for="longitude" class="form-label">Longitude</label>
+          <input type="number" step="0.0001" class="form-control" id="longitude" required>
+        </div>
+        <div class="col-md-12 mt-2">
+          <button type="submit" class="btn btn-primary w-100">�� Predict Malaria Risk</button>
+        </div>
       </div>
-      <div class="mb-3">
-        <label for="humidity" class="form-label">Humidity (%)</label>
-        <input type="number" step="0.1" class="form-control" id="humidity" required>
-      </div>
-      <div class="mb-3">
-        <label for="latitude" class="form-label">Latitude</label>
-        <input type="number" step="0.0001" class="form-control" id="latitude" required>
-      </div>
-      <div class="mb-3">
-        <label for="longitude" class="form-label">Longitude</label>
-        <input type="number" step="0.0001" class="form-control" id="longitude" required>
-      </div>
-      <button type="submit" class="btn btn-primary">Predict</button>
     </form>
 
-    <div class="alert mt-4 d-none" id="resultBox"></div>
+    <!-- Prediction Result -->
+    <div class="alert mt-3 d-none" id="resultBox"></div>
 
-    <!-- Outbreak Map -->
-    <h4 class="mt-5">Outbreak Map</h4>
+    <!-- Map Section -->
+    <h4 class="mt-5">🗺️ Malaria Risk Map (Nigeria)</h4>
     <div id="map" class="rounded shadow-sm"></div>
   </div>
 
@@ -55,7 +75,7 @@
 
       fetch('/predict', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rainfall, temperature, humidity, latitude, longitude })
       })
       .then(response => response.json())
@@ -72,7 +92,7 @@
           resultBox.textContent = "⚠️ Invalid response from server.";
         }
         resultBox.classList.remove("d-none");
-        loadMapMarkers();  // Refresh markers on map
+        loadMapMarkers();
       })
       .catch(error => {
         const resultBox = document.getElementById('resultBox');
@@ -82,7 +102,16 @@
       });
     });
 
-    const map = L.map('map').setView([9.0820, 8.6753], 6); // Nigeria
+    // Map Setup (Bound to Nigeria)
+    const map = L.map('map', {
+      center: [9.0820, 8.6753],
+      zoom: 6,
+      maxBounds: [[4.0, 3.0], [14.0, 15.0]],
+      maxBoundsViscosity: 1.0,
+      minZoom: 5,
+      maxZoom: 10
+    });
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
@@ -106,8 +135,7 @@
         });
     }
 
-    // Load markers on page load
-    loadMapMarkers();
+    loadMapMarkers(); // Initial marker load
   </script>
 </body>
 </html>
