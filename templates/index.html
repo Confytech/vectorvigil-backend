@@ -49,8 +49,9 @@
           <label for="longitude" class="form-label">Longitude</label>
           <input type="number" step="0.0001" class="form-control" id="longitude" required>
         </div>
-        <div class="col-md-12 mt-2">
-          <button type="submit" class="btn btn-primary w-100">�� Predict Malaria Risk</button>
+        <div class="col-md-12 mt-2 d-flex justify-content-between">
+          <button type="submit" class="btn btn-primary w-50 me-2">🌍 Predict</button>
+          <button type="button" class="btn btn-secondary w-50" onclick="resetForm()">🔄 Reset</button>
         </div>
       </div>
     </form>
@@ -65,8 +66,11 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
+    let mapMarkers = [];
+
     document.getElementById('predictForm').addEventListener('submit', function(e) {
       e.preventDefault();
+
       const rainfall = parseFloat(document.getElementById('rainfall').value);
       const temperature = parseFloat(document.getElementById('temperature').value);
       const humidity = parseFloat(document.getElementById('humidity').value);
@@ -81,16 +85,27 @@
       .then(response => response.json())
       .then(data => {
         const resultBox = document.getElementById('resultBox');
-        if (data.risk === 1) {
+
+        if (data.risk_level === "High") {
           resultBox.className = "alert alert-danger";
-          resultBox.textContent = "⚠️ High Risk of Malaria Outbreak!";
-        } else if (data.risk === 0) {
-          resultBox.className = "alert alert-success";
-          resultBox.textContent = "✅ Low Risk of Malaria Outbreak.";
-        } else {
+          resultBox.innerHTML = `⚠️ <strong>High Risk</strong> of Malaria Outbreak<br>
+            <strong>Region:</strong> ${data.region}<br>
+            <strong>Risk Zone:</strong> ${data.risk_zone}`;
+        } else if (data.risk_level === "Medium") {
           resultBox.className = "alert alert-warning";
-          resultBox.textContent = "⚠️ Invalid response from server.";
+          resultBox.innerHTML = `⚠️ <strong>Medium Risk</strong> of Malaria Outbreak<br>
+            <strong>Region:</strong> ${data.region}<br>
+            <strong>Risk Zone:</strong> ${data.risk_zone}`;
+        } else if (data.risk_level === "Low") {
+          resultBox.className = "alert alert-success";
+          resultBox.innerHTML = `✅ <strong>Low Risk</strong> of Malaria Outbreak<br>
+            <strong>Region:</strong> ${data.region}<br>
+            <strong>Risk Zone:</strong> ${data.risk_zone}`;
+        } else {
+          resultBox.className = "alert alert-secondary";
+          resultBox.textContent = "Unknown risk level received from the server.";
         }
+
         resultBox.classList.remove("d-none");
         loadMapMarkers();
       })
@@ -102,7 +117,6 @@
       });
     });
 
-    // Map Setup (Bound to Nigeria)
     const map = L.map('map', {
       center: [9.0820, 8.6753],
       zoom: 6,
@@ -117,11 +131,19 @@
     }).addTo(map);
 
     function loadMapMarkers() {
+      // Clear old markers
+      mapMarkers.forEach(marker => map.removeLayer(marker));
+      mapMarkers = [];
+
       fetch('/map-data')
         .then(res => res.json())
         .then(points => {
           points.forEach(p => {
-            const color = p.prediction === 1 ? 'red' : 'green';
+            const color =
+              p.prediction === 1 ? 'red' :
+              p.prediction === 2 ? 'orange' :
+              'green';
+
             const marker = L.circleMarker([p.latitude, p.longitude], {
               radius: 8,
               fillColor: color,
@@ -130,12 +152,28 @@
               opacity: 1,
               fillOpacity: 0.8
             }).addTo(map);
-            marker.bindPopup(`Risk: ${p.prediction === 1 ? 'High' : 'Low'}<br>Rainfall: ${p.rainfall}mm`);
+
+            marker.bindPopup(`Risk: ${
+              p.prediction === 1 ? 'High' : 
+              p.prediction === 2 ? 'Medium' : 'Low'
+            }<br>Rainfall: ${p.rainfall}mm`);
+
+            mapMarkers.push(marker);
           });
         });
     }
 
-    loadMapMarkers(); // Initial marker load
+    function resetForm() {
+      document.getElementById('predictForm').reset();
+      const resultBox = document.getElementById('resultBox');
+      resultBox.className = "alert d-none";
+      resultBox.innerHTML = "";
+
+      mapMarkers.forEach(marker => map.removeLayer(marker));
+      mapMarkers = [];
+    }
+
+    loadMapMarkers();
   </script>
 </body>
 </html>

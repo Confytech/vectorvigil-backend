@@ -12,7 +12,6 @@ app.secret_key = 'your-secret-key'  # Replace with a secure random value
 with open('model/malaria_model.pkl', 'rb') as f:
     malaria_model = pickle.load(f)
 
-
 # ---------- USER AUTH ROUTES ----------
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -60,8 +59,18 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-
 # ---------- MAIN APP ROUTES ----------
+
+# 👇 Helper function to label risk level
+def label_risk_level(prediction):
+    if prediction == 0:
+        return "Low"
+    elif prediction == 2:
+        return "Medium"
+    elif prediction == 1:
+        return "High"
+    else:
+        return "Unknown"
 
 @app.route('/')
 def home():
@@ -85,31 +94,33 @@ def predict():
     except (KeyError, ValueError):
         return jsonify({"error": "Invalid input. Please provide rainfall, temperature, humidity, latitude, and longitude."}), 400
 
-    # ✅ Restrict to Nigeria bounds
+    # Restrict to Nigeria bounds
     if not (4.0 <= latitude <= 14.0 and 3.0 <= longitude <= 15.0):
         return jsonify({"error": "Location must be within Nigeria."}), 400
 
     # Predict
     features = np.array([[rainfall, temperature, humidity]])
     prediction = malaria_model.predict(features)[0]
+    risk_label = label_risk_level(prediction)
 
-    # Optional: classify region using your helper
+    # Optional geospatial info
     geo_info = process_geospatial_data(latitude, longitude)
     region = geo_info.get("region", "Unknown")
     risk_zone = geo_info.get("risk_zone", "Unknown")
 
-    # Save to database (add region/risk_zone later if you extend DB schema)
+   # Save to DB
     conn = sqlite3.connect('instance/vectorvigil.db')
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO predictions (rainfall, temperature, humidity, latitude, longitude, prediction)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (rainfall, temperature, humidity, latitude, longitude, int(prediction)))
+        INSERT INTO predictions (rainfall, temperature, humidity, latitude, longitude, prediction, risk_level)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (rainfall, temperature, humidity, latitude, longitude, int(prediction), risk_label))
     conn.commit()
     conn.close()
 
     return jsonify({
         "risk": int(prediction),
+        "risk_level": risk_label,
         "region": region,
         "risk_zone": risk_zone
     })
@@ -128,12 +139,14 @@ def map_data():
         FROM predictions
         WHERE latitude IS NOT NULL AND longitude IS NOT NULL
         ORDER BY timestamp DESC
-        LIMIT 100
+        LIMIT 1
     ''')
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(rows)
 
 
+
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=10000)
+
