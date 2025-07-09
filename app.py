@@ -4,6 +4,8 @@ import pickle
 import numpy as np
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_mail import Mail, Message
+from itsdangerous import URLSafeTimedSerializer
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'  # Replace with a secure random value
@@ -11,6 +13,41 @@ app.secret_key = 'your-secret-key'  # Replace with a secure random value
 # Load model
 with open('model/malaria_model.pkl', 'rb') as f:
     malaria_model = pickle.load(f)
+
+# ---------- MAIL CONFIGURATION ----------
+app.config.update(
+    MAIL_SERVER='smtp.gmail.com',
+    MAIL_PORT=465,
+    MAIL_USE_SSL=True,
+    MAIL_USERNAME='chinazaconfidence22@gmail.com',         # <-- Replace this
+    MAIL_PASSWORD='czxkuaueuztqufgs'             # <-- Replace this (App password from Gmail)
+)
+mail = Mail(app)
+serializer = URLSafeTimedSerializer(app.secret_key)
+
+# ---------- HELPER FUNCTIONS ----------
+
+def get_user_by_email(email):
+    conn = sqlite3.connect('instance/vectorvigil.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+def send_reset_email(email, reset_url):
+    msg = Message("Password Reset for VectorVigil",
+                  sender=app.config['MAIL_USERNAME'],
+                  recipients=[email])
+    msg.body = f"""Hi,
+
+You requested a password reset. Click the link below to reset your password:
+
+{reset_url}
+
+If you didn't request this, please ignore this message.
+"""
+    mail.send(msg)
 
 # ---------- USER AUTH ROUTES ----------
 
@@ -59,9 +96,46 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+# ---------- FORGOT PASSWORD ROUTE ----------
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form['email']
+        user = get_user_by_email(email)
+        if user:
+            token = serializer.dumps(email, salt='reset-password')
+            reset_url = url_for('reset_password', token=token, _external=True)
+            send_reset_email(email, reset_url)
+            return "A reset link has been sent to your email."
+        return "No account with that email."
+    return render_template('forgot_password.html')
+
+# (You will later define /reset-password/<token> route)
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    try:
+        email = serializer.loads(token, salt='reset-password', max_age=3600)  # Token expires in 1 hour
+    except Exception:
+        return "Invalid or expired reset link."
+
+    if request.method == 'POST':
+        new_password = request.form['password']
+        hashed_password = generate_password_hash(new_password)
+
+        conn = sqlite3.connect('instance/vectorvigil.db')
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET password = ? WHERE email = ?', (hashed_password, email))
+        conn.commit()
+        conn.close()
+        return redirect(url_for('login'))
+
+    return render_template('reset_password.html', token=token)
+
+
 # ---------- MAIN APP ROUTES ----------
 
-# 👇 Helper function to label risk level
 def label_risk_level(prediction):
     if prediction == 0:
         return "Low"
@@ -78,7 +152,6 @@ def home():
         return redirect(url_for('login'))
     return render_template('index.html', user=session['username'])
 
-
 @app.route('/predict', methods=['POST'])
 def predict():
     if 'user_id' not in session:
@@ -94,21 +167,17 @@ def predict():
     except (KeyError, ValueError):
         return jsonify({"error": "Invalid input. Please provide rainfall, temperature, humidity, latitude, and longitude."}), 400
 
-    # Restrict to Nigeria bounds
     if not (4.0 <= latitude <= 14.0 and 3.0 <= longitude <= 15.0):
         return jsonify({"error": "Location must be within Nigeria."}), 400
 
-    # Predict
     features = np.array([[rainfall, temperature, humidity]])
     prediction = malaria_model.predict(features)[0]
     risk_label = label_risk_level(prediction)
 
-    # Optional geospatial info
     geo_info = process_geospatial_data(latitude, longitude)
     region = geo_info.get("region", "Unknown")
     risk_zone = geo_info.get("risk_zone", "Unknown")
 
-   # Save to DB
     conn = sqlite3.connect('instance/vectorvigil.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -124,7 +193,6 @@ def predict():
         "region": region,
         "risk_zone": risk_zone
     })
-
 
 @app.route('/map-data')
 def map_data():
@@ -145,8 +213,5 @@ def map_data():
     conn.close()
     return jsonify(rows)
 
-
-
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=10000)
-
